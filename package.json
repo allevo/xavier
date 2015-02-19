@@ -1,0 +1,17 @@
+{
+  "name": "boh",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "BSD-2-Clause",
+  "dependencies": {
+    "esprima": "~2.0.0",
+    "lodash": "~3.2.0",
+    "glob": "~4.4.0",
+    "findit": "~2.0.0"
+  }
+}
