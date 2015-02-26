@@ -36,32 +36,9 @@ Where
 
 The follow list represent which mutations are implemented. Not all are important, not all important mutations are implmented.
 
-* Remove a function call
-```javascript
-[1, 2, 3, 4].join('');
-```
-become
-```javascript
-[1, 2, 3, 4];
-```
-* Change comparison operators
-```javascript
-if (a >= b)
-```
-become
-```javascript
-if (a > b)
-```
-for all possible comparison operators
-* Change binary algebric operators
-```javascript
-a = b + c;
-```
-become
-```javascript
-a = b / c;
-```
-for all other three operators
+* Remove a function call `[1, 2, 3, 4].join('');` become `[1, 2, 3, 4];`
+* Change comparison operators `if (a >= b)` become `if (a > b)` for all possible comparison operators
+* Change binary algebric operators `a = b + c;` become `a = b / c;` for all other three operators
 * Not operator is removed
 * Logical operators are changed
 
