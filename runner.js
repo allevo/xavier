@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 'use strict';
 
 
@@ -20,7 +21,6 @@ function assertNotFalsyAndType(v, type, msg) {
   assert.notEqual(v, null, msg);
   assert.equal(v.constructor, type, msg);
 }
-
 
 function MutationRunner(options, conf) {
   this.options = options;
