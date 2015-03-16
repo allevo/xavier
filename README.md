@@ -52,6 +52,14 @@ require('xavier');
 This is required to run the mutations instead of your code.
 If no mutations are running, this require doesn't nothing.
 
+## Run
+```
+./node_modules/.bin/xavier /path/to/conf
+```
+Use `-vv` to more output. Add more `v` for more verbose output.
+
+Use `-m 3` to run only first three tests (useful if you)
+
 
 ## Which mutations are implemented
 
