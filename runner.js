@@ -47,6 +47,9 @@ function MutationRunner(options, conf) {
 
   this.processUsed = parseInt(conf.processUsed || 1, 10);
   assertNotFalsyAndType(this.processUsed, Number, 'Please give me an integer as processUsed');
+
+  this.command = _.cloneDeep(conf.command);
+  assertNotFalsyAndType(this.command, Array, 'Please give me an integer as command');
 }
 
 MutationRunner.prototype.runMutation = function(mutation, next) {
@@ -58,7 +61,9 @@ MutationRunner.prototype.runMutation = function(mutation, next) {
   log.info('Running ' + JSON.stringify(mutation) + ' mutation');
   log.trace('run env', env);
 
-  var child = child_process.spawn('npm', ['run-script', 'test-bail'], {env: env});
+  var cmd = _.cloneDeep(this.command);
+  cmd.push({env: env});
+  var child = child_process.spawn.apply(child_process, cmd);
   child.on('close', function (code) {
     log.info('Run' + mutation + ' mutation:' + code);
     next(null, code === 1);
@@ -90,10 +95,10 @@ MutationRunner.prototype.runMutations = function(mutations, callback) {
   var keys = Object.keys(mutations);
   log.info(keys.length, 'mutation tests');
   var chunks = [];
-  for(var i = 0; i < keys.length; i+= 1) {
+  for(var i = 0; i < keys.length; i+= this.processUsed) {
     chunks.push({});
-    for(var j=0; j<1; j++) {
-      chunks[i][keys[i * 1 + j]] = mutations[keys[i * 1 + j]];
+    for(var j=0; j < this.processUsed; j++) {
+      chunks[i][keys[i * this.processUsed + j]] = mutations[keys[i * this.processUsed + j]];
     }
   }
 

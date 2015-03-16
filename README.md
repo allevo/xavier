@@ -1,4 +1,4 @@
-# mutation-test-js
+# Xavier
 
 This is a test framework that help you to valutate your test suite.
 Given a command, this framework run your tests editing your code.
@@ -12,24 +12,39 @@ This is why, the mutation test should be used only when you are done and you wou
 Create a simple file as configuration like this
 ```json
 {
-	"directory": "/path/to/your/project",
-	"toIgnore": [
-		"node_modules",
-		"test",
-		".git",
-		"coverage"
-	],
-	"toKeep": [
-		"\.js$"
-	],
-	"usedProcess": 1
+  "projectDir": "/path/to/project",
+  "testDir": "test",
+  "mutationDir": "/path//to/tmp",
+  "toIgnore": [
+    "node_modules",
+    "test",
+    "jsonschemas",
+    "coverage"
+  ],
+  "toKeep": [
+    "\\.js$"
+  ],
+  "command": ["npm", ["run-script", "test-bail"]],
+  "usedProcess": 1
 }
+
 ```
 Where
-* __directory__ is the path of your project
-* __toIgnore__ is an array of regural expression that is used to exclude some paths
+* __projectDir__ is the path of your project
+* __testDir__ is the relative or absolute path of your tests
+* __mutationDir__ is a directory where xavier can write
+* __toIgnore__ is an array of regural expression that is used to exclude some paths/files
 * __toKeep__ is an array of regural expression used to filter the paths to keep
 * __usedProcess__ is the number of the process used to spawn your tests
+* __command__ is the command used to run the tests. Please consider to use "stop-on-first-failure" approach.
+* __usedProcess__ is the number of the process that runs in the same time. If you test some http server, use 1.
+
+On the head of your test files, insert this require:
+```javascript
+require('xavier');
+```
+This is required to run the mutations instead of your code.
+If no mutations are running, this require doesn't nothing.
 
 
 ## Which mutations are implemented
@@ -50,4 +65,6 @@ has 3 mutations for each logical operators (`||` and `&&`) and 7 * 2 = 14 for co
 
 
 ## Are you interested?
-This is at the beginning. More mutations is needed. So, if you are interested, please make a pull request or open an issue!
+This is at the beginning.
+More mutations is needed.
+So, if you are interested, please make a pull request or open an issue!
