@@ -29,3 +29,4 @@ node_modules
 
 
 /mutation_*
+/conf.json

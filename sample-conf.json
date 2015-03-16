@@ -1,0 +1,14 @@
+{
+  "projectDir": "/path/to/project",
+  "testDir": "test",
+  "mutationDir": "/path//to/tmp",
+  "toIgnore": [
+    "node_modules",
+    "test",
+    "jsonschemas",
+    "coverage"
+  ],
+  "toKeep": [
+    "\\.js$"
+  ]
+}

@@ -9,6 +9,10 @@ var currentMutation = process.env.current_mutation;
 var fileMutated = process.env.file_mutated;
 var debug = process.env.mutation_debug || false;
 
+if (!mutationDir) {
+  return;
+}
+
 
 var __old = module.__proto__.require;
 

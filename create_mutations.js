@@ -1,6 +1,5 @@
 'use strict';
 
-
 var fs = require('fs');
 var util = require('util');
 var _ = require('lodash');
@@ -8,23 +7,267 @@ var findit = require('findit');
 var _fs = require('fs');
 var _path = require('path');
 var esprima = require('esprima');
+var md5 = require('MD5');
 
 
-var mutationOptions = {
-  comparation: true,
-  operation: true,
-  removeMethods: true,
-  unary: true,
+function MutationCreator(conf) {
+  this.mutations = {};
+  this.conf = conf;
+  this.mutationOptions = conf.mutationOptions || {
+    comparation: true,
+    operation: true,
+    removeMethods: true,
+    unary: true,
+    logical: true,
+  };
 }
 
-var mutations = {};
+MutationCreator.prototype.notiftyNodeType = function(node) {
+  // console.log(node.type);
+};
 
-function notiftyNodeType(node) {
-  // // console.log(node.type);
+MutationCreator.prototype.create = function(callback) {
+  var rfs = {
+    readdir: _fs.readdir,
+    lstat: _fs.lstat,
+    readlink: _fs.readlink,
+  }
+
+  var self = this;
+  rfs.readdir = function(path, cb) {
+    _fs.readdir(path, function(err, files) {
+      cb(err, files.filter(function(item) {
+        var p = _path.join(path, item);
+        if (self.conf.toIgnore.some(p.match.bind(p))) {
+          return false;
+        }
+        if (fs.lstatSync(p).isDirectory()) {
+          return true;
+        }
+        if (self.conf.toKeep.every(p.match.bind(p))) {
+          console.log(p);
+          return true;
+        }
+        return false;
+      }));
+    });
+  }
+
+  var finder = findit(this.conf.project_dir, { fs: rfs });
+  finder.on('file', this.createMutationForFile.bind(this));
+
+  var self = this;
+  finder.on('end', function () {
+    callback(null, self.mutations);
+  });
+};
+
+MutationCreator.prototype.createMutationForFile = function(file) {
+  var src = fs.readFileSync(file).toString().replace(/^#![\/\w]+\s+\w+\n/, '');
+  try {
+    var tokens = esprima.parse(src, {range: true, loc: true});
+    this.inspect(file, tokens);
+  } catch(e) {
+    if (e.message === 'aaa') {
+      throw e;
+    }
+  }
+};
+
+
+MutationCreator.prototype.inspect = function inspect(file, node) {
+  if (!node) {
+    return;
+  }
+  var type = node.type;
+  switch(type) {
+    case 'Program':
+      node.body.forEach(this.inspect.bind(this, file));
+      break;
+    case 'ExpressionStatement':
+      this.notiftyNodeType(node);
+      break;
+    case 'FunctionDeclaration':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.body);
+      break;
+    case 'BlockStatement':
+      this.notiftyNodeType(node);
+      node.body.forEach(this.inspect.bind(this, file));
+      break;
+    case 'VariableDeclaration':
+      this.notiftyNodeType(node);
+      node.declarations.forEach(this.inspect.bind(this, file));
+      break;
+    case 'VariableDeclarator':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.init);
+      this.inspect(file, node.id);
+      break;
+    case 'ArrayExpression':
+      this.notiftyNodeType(node);
+      node.elements.forEach(this.inspect.bind(this, file));
+      break;
+    case 'Literal':
+      this.notiftyNodeType(node);
+      break;
+    case 'Identifier':
+      this.notiftyNodeType(node);
+      break;
+    case 'CallExpression':
+      this.notiftyNodeType(node);
+      this.createCallExpressionMutation(file, node);
+      this.inspect(file, node.callee);
+      node.arguments.forEach(this.inspect.bind(this, file));
+      break;
+    case 'IfStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.test);
+      this.inspect(file, node.conequent);
+      this.inspect(file, node.alternate);
+      break;
+    case 'UnaryExpression':
+      this.createUnaryMutation(file, node);
+      this.notiftyNodeType(node);
+      this.inspect(file, node.argument);
+      break;
+    case 'MemberExpression':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.object);
+      this.inspect(file, node.property);
+      break;
+    case 'ReturnStatement':
+      // Remove return?
+      this.notiftyNodeType(node);
+      this.inspect(file, node.argument);
+      break;
+    case 'ObjectExpression':
+      this.notiftyNodeType(node);
+      node.properties.forEach(this.inspect.bind(this, file));
+      break;
+    case 'Property':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.key);
+      this.inspect(file, node.value);
+      break;
+    case 'BinaryExpression':
+      this.notiftyNodeType(node);
+      this.createBinaryMutation(file, node);
+      this.inspect(file, node.left);
+      this.inspect(file, node.right);
+      break;
+    case 'LogicalExpression':
+      this.notiftyNodeType(node);
+      this.createLogicalMutation(file, node);
+      this.inspect(file, node.left);
+      this.inspect(file, node.right);
+      break;
+    case 'ConditionalExpression':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.test);
+      this.inspect(file, node.conequent);
+      this.inspect(file, node.alternate);
+      break;
+    case 'NewExpression':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.callee);
+      node.arguments.forEach(this.inspect.bind(this, file));
+      break;
+    case 'FunctionExpression':
+      this.notiftyNodeType(node);
+      node.params.forEach(this.inspect);
+      this.inspect(file, node.body);
+      break;
+    case 'ThisExpression':
+      this.notiftyNodeType(node);
+      break;
+    case 'EmptyStatement':
+      this.notiftyNodeType(node);
+      break;
+    case 'ForInStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.left);
+      this.inspect(file, node.right);
+      this.inspect(file, node.body);
+      break;
+    case 'AssignmentExpression':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.left);
+      this.inspect(file, node.right);
+      break;
+    case 'TryStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.block);
+      this.inspect(file, node.finalizer);
+      break;
+    case 'SwitchStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.discriminant);
+      node.cases.forEach(this.inspect.bind(this, file));
+      break;
+    case 'SwitchCase':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.test);
+      node.consequent.forEach(this.inspect);
+      break;
+    case 'BreakStatement':
+      // remove break ?
+      this.notiftyNodeType(node);
+      break;
+    case 'ThrowStatement':
+      // remove throw?
+      this.notiftyNodeType(node);
+      this.inspect(file, node.argument);
+      break;
+    case 'ForStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.init);
+      this.inspect(file, node.test);
+      this.inspect(file, node.update);
+      this.inspect(file, node.body);
+      break;
+    case 'UpdateExpression':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.argument);
+      break;
+    case 'SequenceExpression':
+      this.notiftyNodeType(node);
+      node.expressions.forEach(this.inspect.bind(this, file));
+      break;
+    case 'WhileStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.test);
+      this.inspect(file, node.body);
+      break;
+    case 'DoWhileStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.test);
+      this.inspect(file, node.body);
+      break;
+    case 'ContinueStatement':
+      // remove continue?
+      this.notiftyNodeType(node);
+      break;
+    case 'LabeledStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.label);
+      this.inspect(file, node.body);
+      break;
+    case 'WithStatement':
+      this.notiftyNodeType(node);
+      this.inspect(file, node.object);
+      this.inspect(file, node.body);
+      break;
+    case 'DebuggerStatement':
+      this.notiftyNodeType(node);
+      break;
+    default:
+      // console.log(node);
+      throw new Error('aaa');
+  }
 }
 
-var dest;
-function createFileWithSubstitution(file, loc, sub) {
+MutationCreator.prototype.createFileWithSubstitution = function (file, loc, sub) {
   var rows = fs.readFileSync(file).toString().split('\n');
 
   rows[loc.line -1 ] = [
@@ -33,19 +276,24 @@ function createFileWithSubstitution(file, loc, sub) {
     rows[loc.line - 1].slice(loc.end)
   ].join(' ');
   // console.log(rows[loc.line - 1]);
-  var name = Math.random();
-  fs.writeFileSync(dest + '/' + name + '.js', rows.join('\n'));
+  var name = md5(rows.join('\n'));
+  fs.writeFileSync(this.conf.mutation_dir + '/' + name + '.js', rows.join('\n'));
 
-  mutations[name] = file;
+  this.mutations[name] = {
+    file: file,
+    subLoc: loc,
+    md5: name,
+  };
 }
 
-function createBinaryComparatorMutation(file, node) {
+MutationCreator.prototype.createBinaryComparatorMutation = function(file, node) {
   if (!mutationOptions.comparation) {
     return;
   }
 
   var op = {'==': true, '!=': true, '>': true, '>=': true, '<': true, '<=': true, '===': true, '!==': true};
   delete op[node.operator];
+  var self = this;
   Object.keys(op).forEach(function(o) {
     if (node.loc.start.line !== node.loc.end.line) {
       // console.log(file, node, o);
@@ -56,17 +304,18 @@ function createBinaryComparatorMutation(file, node) {
       start: node.left.loc.end.column,
       end: node.right.loc.start.column,
     };
-    createFileWithSubstitution(file, options, o);
+    self.createFileWithSubstitution(file, options, o);
   });
 }
 
-function createBinaryOperationMutation(file, node) {
-  if (!mutationOptions.operation) {
+MutationCreator.prototype.createBinaryOperationMutation = function(file, node) {
+  if (!this.mutationOptions.operation) {
     return;
   }
 
   var op = {'+': true, '*': true, '/': true, '-': true};
   delete op[node.operator];
+  var self = this;
   Object.keys(op).forEach(function(o) {
     if (node.loc.start.line !== node.loc.end.line) {
       // console.log(file, node, o);
@@ -77,25 +326,25 @@ function createBinaryOperationMutation(file, node) {
       start: node.left.loc.end.column,
       end: node.right.loc.start.column,
     };
-    createFileWithSubstitution(file, options, o);
+    self.createFileWithSubstitution(file, options, o);
   });
 }
 
-function createBinaryMutation(file, node) {
+MutationCreator.prototype.createBinaryMutation = function(file, node) {
   if (['in', 'instanceof'].indexOf(node.operator) > -1 ) { return; }
 
   if (['+', '*', '/', '-'].indexOf(node.operator) > -1) {
-    return createBinaryOperationMutation(file, node);
+    return this.createBinaryOperationMutation(file, node);
   }
   if (['==', '!=', '>', '>=', '<', '<=', '===', '!=='].indexOf(node.operator) > -1) {
-    return createBinaryComparatorMutation(file, node);
+    return this.createBinaryComparatorMutation(file, node);
   }
 
   throw new Error('Not yet implemented binary');
 }
 
-function createCallExpressionMutation(file, node) {
-  if (!mutationOptions.removeMethods) {
+MutationCreator.prototype.createCallExpressionMutation = function(file, node) {
+  if (!this.mutationOptions.removeMethods) {
     return;
   }
 
@@ -122,11 +371,11 @@ function createCallExpressionMutation(file, node) {
     start: node.callee.object.loc.end.column,
     end: node.loc.end.column,
   };
-  createFileWithSubstitution(file, options, '');
+  this.createFileWithSubstitution(file, options, '');
 }
 
-function createUnaryMutation(file, node) {
-  if (!mutationOptions.unary) {
+MutationCreator.prototype.createUnaryMutation = function(file, node) {
+  if (!this.mutationOptions.unary) {
     return;
   }
 
@@ -139,12 +388,16 @@ function createUnaryMutation(file, node) {
     start: node.loc.start.column,
     end: node.loc.start.column + 1,
   };
-  createFileWithSubstitution(file, options, '');
+  this.createFileWithSubstitution(file, options, '');
 }
 
-function createLogicalMutation(file, node) {
+MutationCreator.prototype.createLogicalMutation = function(file, node) {
+  if (!this.mutationOptions.logical) {
+    return;
+  }
   var op = {'||': true, '&&': true};
   delete op[node.operator];
+  var self = this;
   Object.keys(op).forEach(function(o) {
     if (node.loc.start.line !== node.loc.end.line) {
       // console.log(file, node, o);
@@ -155,258 +408,11 @@ function createLogicalMutation(file, node) {
       start: node.left.loc.end.column,
       end: node.right.loc.start.column,
     };
-    createFileWithSubstitution(file, options, o);
+    self.createFileWithSubstitution(file, options, o);
   });
 }
 
 // var file = '/home/tommaso/repos/newton/client_end/iPawn/index.js';
-function inspect(file, node) {
-  if (!node) {
-    return;
-  }
-  var type = node.type;
-  switch(type) {
-    case 'Program':
-      node.body.forEach(inspect.bind(null, file));
-      break;
-    case 'ExpressionStatement':
-      notiftyNodeType(node);
-      break;
-    case 'FunctionDeclaration':
-      notiftyNodeType(node);
-      inspect(file, node.body);
-      break;
-    case 'BlockStatement':
-      notiftyNodeType(node);
-      node.body.forEach(inspect.bind(null, file));
-      break;
-    case 'VariableDeclaration':
-      notiftyNodeType(node);
-      node.declarations.forEach(inspect.bind(null, file));
-      break;
-    case 'VariableDeclarator':
-      notiftyNodeType(node);
-      inspect(file, node.init);
-      inspect(file, node.id);
-      break;
-    case 'ArrayExpression':
-      notiftyNodeType(node);
-      node.elements.forEach(inspect.bind(null, file));
-      break;
-    case 'Literal':
-      notiftyNodeType(node);
-      break;
-    case 'Identifier':
-      notiftyNodeType(node);
-      break;
-    case 'CallExpression':
-      notiftyNodeType(node);
-      createCallExpressionMutation(file, node);
-      inspect(file, node.callee);
-      node.arguments.forEach(inspect.bind(null, file));
-      break;
-    case 'IfStatement':
-      notiftyNodeType(node);
-      inspect(file, node.test);
-      inspect(file, node.conequent);
-      inspect(file, node.alternate);
-      break;
-    case 'UnaryExpression':
-      createUnaryMutation(file, node);
-      notiftyNodeType(node);
-      inspect(file, node.argument);
-      break;
-    case 'MemberExpression':
-      notiftyNodeType(node);
-      inspect(file, node.object);
-      inspect(file, node.property);
-      break;
-    case 'ReturnStatement':
-      // Remove return?
-      notiftyNodeType(node);
-      inspect(file, node.argument);
-      break;
-    case 'ObjectExpression':
-      notiftyNodeType(node);
-      node.properties.forEach(inspect.bind(null, file));
-      break;
-    case 'Property':
-      notiftyNodeType(node);
-      inspect(file, node.key);
-      inspect(file, node.value);
-      break;
-    case 'BinaryExpression':
-      notiftyNodeType(node);
-      createBinaryMutation(file, node);
-      inspect(file, node.left);
-      inspect(file, node.right);
-      break;
-    case 'LogicalExpression':
-      notiftyNodeType(node);
-      createLogicalMutation(file, node);
-      inspect(file, node.left);
-      inspect(file, node.right);
-      break;
-    case 'ConditionalExpression':
-      notiftyNodeType(node);
-      inspect(file, node.test);
-      inspect(file, node.conequent);
-      inspect(file, node.alternate);
-      break;
-    case 'NewExpression':
-      notiftyNodeType(node);
-      inspect(file, node.callee);
-      node.arguments.forEach(inspect.bind(null, file));
-      break;
-    case 'FunctionExpression':
-      notiftyNodeType(node);
-      node.params.forEach(inspect);
-      inspect(file, node.body);
-      break;
-    case 'ThisExpression':
-      notiftyNodeType(node);
-      break;
-    case 'EmptyStatement':
-      notiftyNodeType(node);
-      break;
-    case 'ForInStatement':
-      notiftyNodeType(node);
-      inspect(file, node.left);
-      inspect(file, node.right);
-      inspect(file, node.body);
-      break;
-    case 'AssignmentExpression':
-      notiftyNodeType(node);
-      inspect(file, node.left);
-      inspect(file, node.right);
-      break;
-    case 'TryStatement':
-      notiftyNodeType(node);
-      inspect(file, node.block);
-      inspect(file, node.finalizer);
-      break;
-    case 'SwitchStatement':
-      notiftyNodeType(node);
-      inspect(file, node.discriminant);
-      node.cases.forEach(inspect.bind(null, file));
-      break;
-    case 'SwitchCase':
-      notiftyNodeType(node);
-      inspect(file, node.test);
-      node.consequent.forEach(inspect);
-      break;
-    case 'BreakStatement':
-      // remove break ?
-      notiftyNodeType(node);
-      break;
-    case 'ThrowStatement':
-      // remove throw?
-      notiftyNodeType(node);
-      inspect(file, node.argument);
-      break;
-    case 'ForStatement':
-      notiftyNodeType(node);
-      inspect(file, node.init);
-      inspect(file, node.test);
-      inspect(file, node.update);
-      inspect(file, node.body);
-      break;
-    case 'UpdateExpression':
-      notiftyNodeType(node);
-      inspect(file, node.argument);
-      break;
-    case 'SequenceExpression':
-      notiftyNodeType(node);
-      node.expressions.forEach(inspect.bind(null, file));
-      break;
-    case 'WhileStatement':
-      notiftyNodeType(node);
-      inspect(file, node.test);
-      inspect(file, node.body);
-      break;
-    case 'DoWhileStatement':
-      notiftyNodeType(node);
-      inspect(file, node.test);
-      inspect(file, node.body);
-      break;
-    case 'ContinueStatement':
-      // remove continue?
-      notiftyNodeType(node);
-      break;
-    case 'LabeledStatement':
-      notiftyNodeType(node);
-      inspect(file, node.label);
-      inspect(file, node.body);
-      break;
-    case 'WithStatement':
-      notiftyNodeType(node);
-      inspect(file, node.object);
-      inspect(file, node.body);
-      break;
-    case 'DebuggerStatement':
-      notiftyNodeType(node);
-      break;
-    default:
-      // console.log(node);
-      throw new Error('aaa');
-  }
-}
 
 
-function create(basepath, conf, callback) {
-  dest = conf.mutation_dir;
-
-  var rfs = {
-    readdir: _fs.readdir,
-    lstat: _fs.lstat,
-    readlink: _fs.readlink,
-  }
-
-  rfs.readdir = function(path, cb) {
-    _fs.readdir(path, function(err, files) {
-      cb(err, files.filter(function(item) {
-        var p = _path.join(path, item);
-        if (conf.toIgnore.some(p.match.bind(p))) {
-          return false;
-        }
-        if (fs.lstatSync(p).isDirectory()) {
-          return true;
-        }
-        if (conf.toKeep.every(p.match.bind(p))) {
-          return true;
-        }
-        return false;
-      }));
-    });
-  }
-
-
-  var options = {
-    fs: rfs
-  };
-  var finder = findit(basepath, options);
-  finder.on('file', function(file) {
-    var src = fs.readFileSync(file).toString().replace(/^#![\/\w]+\s+\w+\n/, '');
-    // console.log(file);
-    try {
-      var tokens = esprima.parse(src, {range: true, loc: true});
-      //// console.log(require('util').inspect(tokens, {depth: null}));
-      inspect(file, tokens);
-    } catch(e) {
-      // console.log(file, e);
-      if (e.message === 'aaa') {
-        throw e;
-      }
-    }
-
-  });
-
-  finder.on('end', function () {
-    callback(null, mutations);
-  });
-}
-
-
-module.exports = {
-  create: create
-};
+module.exports = MutationCreator;
