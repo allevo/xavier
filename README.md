@@ -4,8 +4,14 @@ This is a test framework that help you to valutate your test suite.
 Given a command, this framework run your tests editing your code.
 If your test asserts the correct values, your tests fail.
 Otherwise all tests run correctly and your test aren't able to catch the changes.
+Please read [this](http://en.wikipedia.org/wiki/Mutation_testing) for more informations.
+
 
 ## How to integrate
+```
+npm install --save-dev xavier
+```
+
 The mutation tests are very slow to run, because need to run all test suite to find the test that fails.
 This is why, the mutation test should be used only when you are done and you would find some bugs.
 
